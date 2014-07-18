@@ -101,6 +101,8 @@ Key.prototype.draw = function () {
     this.$element = $('<div class="key"></div>');
     this.$element.css("width", scale + 'px');
     this.$element.css("height", scale + 'px');
+    this.$element.css("transition-timing-function", "linear, linear");
+    this.$element.css("transition", "linear left " + (3 * tickDuration * keySpeed) + "ms, linear top " + (3 * tickDuration * keySpeed) + "ms");
     $('body').append(this.$element);
   }
 
@@ -190,6 +192,7 @@ Dashboard.prototype.draw = function () {
 Dashboard.prototype.tryToAttack = function () {
   console.log("Try to attack");
   
+  // TODO: only target a key that's in the range
   if (this.field.keys.length > 0) {
     new Badge(this, this.field.keys[0]);
   }
@@ -234,7 +237,8 @@ Badge.prototype.move = function () {
     if (!this.hitTarget) {
       this.target.hit();
       this.hitTarget = true;
-      this.$element.css('display', 'none');
+      // Cleaning: remove from DOM and from tick listeners
+      this.$element.remove();
       this.target.field.removeListener('tick', this.tickerId);
     }
     return;

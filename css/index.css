@@ -13,21 +13,18 @@ body {
   background-image: url('../images/key.png');
   background-size: contain;
   position: fixed;
-  //transition: top 0.8s, left 0.8s;
 }
 
 .dashboard {
   background-image: url('../images/dashboard.png');
   background-size: contain;
   position: fixed;
-  //transition: top 0.8s, left 0.8s;
 }
 
 .badge {
   background-image: url('../images/badge.png');
   background-size: contain;
   position: fixed;
-  //transition: top 0.8s, left 0.8s;
 }
 
 .ghost {
