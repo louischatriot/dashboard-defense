@@ -7,24 +7,8 @@ var field   // Global variable to use field eeverywhere
   , inDashboardPlacementMode = false
   , dashboardsLeft = 10
   , keysToKill = 8
+  , lost = false
   ;
-
-// Pubsub, only one message allowed but it can be an object
-// This makes all objects from given constructor event emitters
-function makeEventEmitter (Constructor) {
-  Constructor.prototype.on = function (evt, action) {
-    if (!this.events[evt]) { this.events[evt] = []; }
-    this.events[evt].push(action);
-  };
-
-  Constructor.prototype.trigger = function (evt, msg) {
-    if (!this.events[evt]) { return; }
-
-    for (var i = 0; i < this.events[evt].length; i += 1) {
-      this.events[evt][i](msg);
-    }
-  };
-}
 
 
 
@@ -35,6 +19,7 @@ function Field(width, height) {
 
   this.width = width;
   this.height = height;
+  this.keys = [];
   this.$container = $('<div class="container"></div>');
   this.$container.css("width", (scale * this.width) + 'px');
   this.$container.css("height", (scale * this.height) + 'px');
@@ -52,7 +37,20 @@ function Field(width, height) {
   // Initialize pubsub
   this.events = {};
 }
-makeEventEmitter(Field);
+
+// Pubsub
+Field.prototype.on = function (evt, action) {
+  if (!this.events[evt]) { this.events[evt] = []; }
+  this.events[evt].push(action);
+};
+
+Field.prototype.trigger = function (evt, msg) {
+  if (!this.events[evt]) { return; }
+
+  for (var i = 0; i < this.events[evt].length; i += 1) {
+    this.events[evt][i](msg);
+  }
+};
 
 
 
@@ -62,8 +60,8 @@ function Key(field, x, y) {
   this.x = x || Math.floor(field.width * Math.random());
   this.y = y || Math.floor(4 * Math.random());
   this.controlPoints = [];
+  field.keys.push(this);
 }
-makeEventEmitter(Key);
 
 // Draw the Key at the current coordinate. Create the element if it doesn't exist
 Key.prototype.draw = function () {
@@ -85,7 +83,7 @@ Key.prototype.setDestination = function (x, y) {
 
 // Move one step
 Key.prototype.move = function () {
-  if (this.controlPoints.length === 0) { return; }
+  if (this.controlPoints.length === 0) { return this.checkEndReached(); }
 
   var target = this.controlPoints[0];
 
@@ -98,11 +96,11 @@ Key.prototype.move = function () {
   // If already on the right place in one dimension, move on the other
   if (target.x === this.x) {
     this.y += this.y > target.y ? -1 : 1;
-    return;
+    return this.checkEndReached();
   }
   if (target.y === this.y) {
     this.x += this.x > target.x ? -1 : 1;
-    return;
+    return this.checkEndReached();
   }
 
   // Choose at random one direction to move to
@@ -110,6 +108,13 @@ Key.prototype.move = function () {
     this.x += this.x > target.x ? -1 : 1;
   } else {
     this.y += this.y > target.y ? -1 : 1;
+  }
+  return this.checkEndReached();
+};
+
+Key.prototype.checkEndReached = function () {
+  if (this.y >= field.height - 1) {
+    field.trigger('game lost');
   }
 };
 
@@ -120,6 +125,7 @@ function Dashboard(field, x, y) {
   this.x = x;
   this.y = y;
   field.matrix[x][y] = DASHBOARD;
+  this.field = field;
 }
 
 // Draw the dashboard. Could factor with the Key drawing function ...
@@ -133,6 +139,12 @@ Dashboard.prototype.draw = function () {
 
   this.$element.css("left", this.x * scale + 'px');
   this.$element.css("top", this.y * scale + 'px');
+};
+
+// Try to find a key to attack
+Dashboard.prototype.tryToAttack = function () {
+  console.log("Try to attack");
+
 };
 
 
@@ -168,8 +180,16 @@ function initTowerPlacementMode(field) {
     // Create and draw dashboard
     var d = new Dashboard(field, x, y);
     d.draw();
+    // Use a closure to not share the same variable
+    field.on('tick', (function (dashboard) { return function () {
+      dashboard.tryToAttack();
+    }})(d));
 
     updateDashboardCount(-1);
+  });
+
+  field.$container.on('mouseout', function () {
+    $ghostDashboard.css("display", "none");
   });
 }
 
@@ -184,6 +204,12 @@ function init() {
   $ghostDashboard.css("height", scale + 'px');
   $ghostDashboard.css("display", "none");
   field.$container.append($ghostDashboard);
+
+  field.on('game lost', function() {
+    if (lost) { return; }
+    lost = true;
+    alert('One key made it through, you lose!');
+  });
 }
 
 
@@ -229,10 +255,11 @@ $('#place-dashboards').on('click', function () {
 function startFight (field) {
   var key;
 
+  // Create keys
   while (keysToKill > 0) {
     key = new Key(field);
     key.draw();
-    key.setDestination(6, 27);
+    key.setDestination(Math.floor(field.width * Math.random()), field.height - 1);
     // Use a closure to not share the same variable
     field.on('tick', (function (key) { return function () {
       key.move();
