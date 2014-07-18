@@ -44,18 +44,42 @@ function Field(width, height) {
 }
 
 // Pubsub
+// on function will return the number of the listener for this specific event
+// event names should not begin and end with '__'
+function id(evt) { return '__' + evt + '__'; }
+
 Field.prototype.on = function (evt, action) {
-  if (!this.events[evt]) { this.events[evt] = []; }
-  this.events[evt].push(action);
+  if (!this.events[evt]) {
+    this.events[evt] = [];
+    this.events[id(evt)] = -1;
+  }
+  this.events[id(evt)] += 1;
+  this.events[evt].push({ id: this.events[id(evt)], listener: action });
+
+  return this.events[id(evt)];
 };
 
 Field.prototype.trigger = function (evt, msg) {
   if (!this.events[evt]) { return; }
 
   for (var i = 0; i < this.events[evt].length; i += 1) {
-    this.events[evt][i](msg);
+    this.events[evt][i].listener(msg);
   }
 };
+
+Field.prototype.removeListener = function (evt, id) {
+  var i, res = [];
+
+  if (!this.events[evt]) { return; }
+  
+  // TODO: with underscore
+  for (i = 0; i < this.events[evt].length; i += 1) {
+    if (this.events[evt][i].id !== id) {
+      res.push(this.events[evt][i]);
+    }
+  }
+  this.events[evt] = res;
+}
 
 
 
@@ -134,7 +158,7 @@ Key.prototype.hit = function () {
     this.$element.css('display', 'none');
     this.field.keys = _.without(this.field.keys, this);
     this.targettedBy.forEach(function(badge) {
-      badge.$element.css('display', 'none');
+      badge.$element && badge.$element.css('display', 'none');
     });
   }
 }
@@ -181,7 +205,7 @@ function Badge(dashboard, key) {
   this.hitTarget = false;
   key.targettedBy.push(this);
 
-  dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
+  this.tickerId = dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
     if (count % badgeSpeed === 0) {
       console.log("BADGE Is TRYING TO MOVE");
       badge.draw();
@@ -211,6 +235,7 @@ Badge.prototype.move = function () {
       this.target.hit();
       this.hitTarget = true;
       this.$element.css('display', 'none');
+      this.target.field.removeListener('tick', this.tickerId);
     }
     return;
   }
