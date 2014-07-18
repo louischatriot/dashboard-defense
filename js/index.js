@@ -1,6 +1,10 @@
 var field   // Global variable to use field eeverywhere
   , scale = 25   // Size of a chunk in pixels
-  , keySpeed = 0.6   // Time in seconds to move from one position to the next
+  , badgeScale = 25   // Size of a badge in pixels
+  , keySpeed = 10   // Number of ticks between two key movements
+  , badgeSpeed = 2   // Number of ticks between two badge movements
+  , dashboardAttackRate = 5   // Number of ticks between two dashboard attacks
+  , tickDuration = 100   // Duration of tick in ms
   , EMPTY_CASE = 0
   , DASHBOARD = 1
   , $ghostDashboard = $('<div class="ghost dashboard"></div>')
@@ -81,7 +85,7 @@ Key.prototype.setDestination = function (x, y) {
   this.controlPoints = [{x: x, y: y}];
 };
 
-// Move one step
+// Move one step towards destination
 Key.prototype.move = function () {
   if (this.controlPoints.length === 0) { return this.checkEndReached(); }
 
@@ -144,7 +148,55 @@ Dashboard.prototype.draw = function () {
 // Try to find a key to attack
 Dashboard.prototype.tryToAttack = function () {
   console.log("Try to attack");
+  
+  if (this.field.keys.length > 0) {
+    new Badge(this, this.field.keys[0]);
+  }
+};
 
+
+
+// A badge (an attack!)
+function Badge(dashboard, key) {
+  this.x = dashboard.x;
+  this.y = dashboard.y;
+  this.target = key;
+
+  dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
+    if (count % badgeSpeed === 0) {
+      console.log("BADGE Is TRYING TO MOVE");
+      badge.draw();
+      badge.move();
+    }
+
+    count += 1;
+  }})(this));
+}
+
+// Draw the badge. Could factor with the Key drawing function ...
+Badge.prototype.draw = function () {
+  if (!this.$element) {
+    this.$element = $('<div class="badge"></div>');
+    this.$element.css("width", badgeScale + 'px');
+    this.$element.css("height", badgeScale + 'px');
+    $('body').append(this.$element);
+  }
+
+  this.$element.css("left", this.x * scale + 'px');
+  this.$element.css("top", this.y * scale + 'px');
+};
+
+Badge.prototype.move = function () {
+  if (this.x === this.target.x && this.y === this.target.y) {
+    console.log("BOOM");
+    return;
+  }
+
+  if (this.x === this.target.x) {
+    this.y += this.y > this.target.y ? -1 : 1;
+  } else {
+    this.x += this.x > this.target.x ? -1 : 1;
+  }
 };
 
 
@@ -181,8 +233,11 @@ function initTowerPlacementMode(field) {
     var d = new Dashboard(field, x, y);
     d.draw();
     // Use a closure to not share the same variable
-    field.on('tick', (function (dashboard) { return function () {
-      dashboard.tryToAttack();
+    field.on('tick', (function (dashboard) { var count = 0; return function () {
+      if (count % dashboardAttackRate === 0) {
+        dashboard.tryToAttack();
+      }
+      count += 1;
     }})(d));
 
     updateDashboardCount(-1);
@@ -261,13 +316,21 @@ function startFight (field) {
     key.draw();
     key.setDestination(Math.floor(field.width * Math.random()), field.height - 1);
     // Use a closure to not share the same variable
-    field.on('tick', (function (key) { return function () {
-      key.move();
-      key.draw();
+    field.on('tick', (function (key) { var count = 0; return function () {
+      if (count % keySpeed === 0) {
+        key.move();
+        key.draw();
+      }
+      count += 1;
     }})(key));
 
     keysToKill -= 1;
   }
+
+  // Tick
+  setInterval(function() {
+    field.trigger('tick');
+  }, tickDuration);
 }
 
 $('#start-fight').on('click', function () {
