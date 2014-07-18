@@ -5,6 +5,7 @@ var field   // Global variable to use field eeverywhere
   , badgeSpeed = 2   // Number of ticks between two badge movements
   , dashboardAttackRate = 5   // Number of ticks between two dashboard attacks
   , tickDuration = 100   // Duration of tick in ms
+  , keyBaseHP = 8
   , EMPTY_CASE = 0
   , DASHBOARD = 1
   , $ghostDashboard = $('<div class="ghost dashboard"></div>')
@@ -65,6 +66,9 @@ function Key(field, x, y) {
   this.y = y || Math.floor(4 * Math.random());
   this.controlPoints = [];
   field.keys.push(this);
+  this.field = field;
+  this.hp = keyBaseHP;
+  this.targettedBy = [];
 }
 
 // Draw the Key at the current coordinate. Create the element if it doesn't exist
@@ -122,6 +126,19 @@ Key.prototype.checkEndReached = function () {
   }
 };
 
+// TODO: better way to remove a key from the field, this is ugly
+Key.prototype.hit = function () {
+  this.hp -= 1;
+  if (this.hp === 0) {
+    this.setDestination(this.x, this.y);   // Stop moving
+    this.$element.css('display', 'none');
+    this.field.keys = _.without(this.field.keys, this);
+    this.targettedBy.forEach(function(badge) {
+      badge.$element.css('display', 'none');
+    });
+  }
+}
+
 
 
 // A dashboard (good guy!)
@@ -161,6 +178,8 @@ function Badge(dashboard, key) {
   this.x = dashboard.x;
   this.y = dashboard.y;
   this.target = key;
+  this.hitTarget = false;
+  key.targettedBy.push(this);
 
   dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
     if (count % badgeSpeed === 0) {
@@ -188,7 +207,11 @@ Badge.prototype.draw = function () {
 
 Badge.prototype.move = function () {
   if (this.x === this.target.x && this.y === this.target.y) {
-    console.log("BOOM");
+    if (!this.hitTarget) {
+      this.target.hit();
+      this.hitTarget = true;
+      this.$element.css('display', 'none');
+    }
     return;
   }
 
