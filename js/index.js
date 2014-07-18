@@ -6,7 +6,27 @@ var field   // Global variable to use field eeverywhere
   , $ghostDashboard = $('<div class="ghost dashboard"></div>')
   , inDashboardPlacementMode = false
   , dashboardsLeft = 10
+  , keysToKill = 8
   ;
+
+// Pubsub, only one message allowed but it can be an object
+// This makes all objects from given constructor event emitters
+function makeEventEmitter (Constructor) {
+  Constructor.prototype.on = function (evt, action) {
+    if (!this.events[evt]) { this.events[evt] = []; }
+    this.events[evt].push(action);
+  };
+
+  Constructor.prototype.trigger = function (evt, msg) {
+    if (!this.events[evt]) { return; }
+
+    for (var i = 0; i < this.events[evt].length; i += 1) {
+      this.events[evt][i](msg);
+    }
+  };
+}
+
+
 
 // Playing field
 // Coordinates vary from 0 to width - 1 and 0 to height - 1
@@ -32,20 +52,7 @@ function Field(width, height) {
   // Initialize pubsub
   this.events = {};
 }
-
-// Pubsub, only one message allowed but it can be an object
-Field.prototype.on = function (evt, action) {
-  if (!this.events[evt]) { this.events[evt] = []; }
-  this.events[evt].push(action);
-};
-
-Field.prototype.trigger = function (evt, msg) {
-  if (!this.events[evt]) { return; }
-
-  for (var i = 0; i < this.events[evt].length; i += 1) {
-    this.events[evt][i](msg);
-  }
-};
+makeEventEmitter(Field);
 
 
 
@@ -56,6 +63,7 @@ function Key(field, x, y) {
   this.y = y || Math.floor(4 * Math.random());
   this.controlPoints = [];
 }
+makeEventEmitter(Key);
 
 // Draw the Key at the current coordinate. Create the element if it doesn't exist
 Key.prototype.draw = function () {
@@ -161,14 +169,9 @@ function initTowerPlacementMode(field) {
     var d = new Dashboard(field, x, y);
     d.draw();
 
-    // Keep track of count
-    dashboardsLeft -= 1;
-    if (dashboardsLeft === 0) { 
-      inDashboardPlacementMode = false;
-    }
+    updateDashboardCount(-1);
   });
 }
-
 
 
 
@@ -176,17 +179,7 @@ function initTowerPlacementMode(field) {
 function init() {
   field = new Field(12, 28);
 
-  key = new Key(field);
-
-  key.draw();
-  key.setDestination(6, 25);
-
-
-  d = new Dashboard(field, 10, 2);
-  d.draw();
-  d = new Dashboard(field, 10, 9);
-  d.draw();
-
+  // Create ghost piece
   $ghostDashboard.css("width", scale + 'px');
   $ghostDashboard.css("height", scale + 'px');
   $ghostDashboard.css("display", "none");
@@ -194,10 +187,75 @@ function init() {
 }
 
 
+
+// Manage dashboard placement mode
+function updateDashboardCount (delta) {
+  dashboardsLeft += delta || 0;
+
+  $("#dashboard-count").html(dashboardsLeft + ' dashboards left to place');
+
+  if (dashboardsLeft === 0) { 
+    leaveDashboardPlacement();
+  }
+}
+
+function switchToDashboardPlacement () {
+  inDashboardPlacementMode = true;
+  $('#place-dashboards').removeAttr("disabled");
+  $('#place-dashboards').attr("value", "Stop placing dashboards");
+}
+
+function leaveDashboardPlacement () {
+  inDashboardPlacementMode = false;
+  if (dashboardsLeft > 0) {
+    $('#place-dashboards').attr("value", "Start placing dashboards");
+  } else {
+    $('#place-dashboards').attr("disabled", "true");
+    $('#place-dashboards').attr("value", "No dashboard left");
+  }
+}
+
+$('#place-dashboards').on('click', function () {
+  if (inDashboardPlacementMode) {
+    leaveDashboardPlacement();
+  } else {
+    switchToDashboardPlacement();
+  }
+});
+
+
+
+// Manage fight start
+function startFight (field) {
+  var key;
+
+  while (keysToKill > 0) {
+    key = new Key(field);
+    key.draw();
+    key.setDestination(6, 27);
+    // Use a closure to not share the same variable
+    field.on('tick', (function (key) { return function () {
+      key.move();
+      key.draw();
+    }})(key));
+
+    keysToKill -= 1;
+  }
+}
+
+$('#start-fight').on('click', function () {
+  startFight(field);
+});
+
+
+// Play
 init();
-
-
-
-
+updateDashboardCount();
 initTowerPlacementMode(field);
+
+
+
+
+
+
 
