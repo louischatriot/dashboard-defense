@@ -2,19 +2,27 @@ var field   // Global variable to use field eeverywhere
   , scale = 25   // Size of a chunk in pixels
   , badgeScale = 25   // Size of a badge in pixels
   , keySpeed = 10   // Number of ticks between two key movements
-  , badgeSpeed = 2   // Number of ticks between two badge movements
-  , dashboardAttackRate = 5   // Number of ticks between two dashboard attacks
-  , tickDuration = 100   // Duration of tick in ms
+  , badgeSpeed = 25   // Number of steps for a badge to reach the targetted key
+  , dashboardAttackRate = 20  // Number of ticks between two dashboard attacks
+  , tickDuration = 20   // Duration of tick in ms
   , keyBaseHP = 8
   , EMPTY_CASE = 0
   , DASHBOARD = 1
   , $ghostDashboard = $('<div class="ghost dashboard"></div>')
   , inDashboardPlacementMode = false
   , dashboardsLeft = 10
-  , keysToKill = 8
+  , keysToKill = 1
   , lost = false
   ;
 
+
+// Conversion functions for drawing
+function _left (x) {
+  return scale * x;
+}
+function _top (y) {
+  return scale * y;
+}
 
 
 // Playing field
@@ -93,6 +101,14 @@ function Key(field, x, y) {
   this.field = field;
   this.hp = keyBaseHP;
   this.targettedBy = [];
+
+  this.tickerId = field.on('tick', (function (key) { var count = 0; return function () {
+    if (count % keySpeed === 0) {
+      key.move();
+      key.draw();
+    }
+    count += 1;
+  }})(this));
 }
 
 // Draw the Key at the current coordinate. Create the element if it doesn't exist
@@ -106,8 +122,8 @@ Key.prototype.draw = function () {
     $('body').append(this.$element);
   }
 
-  this.$element.css("left", this.x * scale + 'px');
-  this.$element.css("top", this.y * scale + 'px');
+  this.$element.css("left", _left(this.x) + 'px');
+  this.$element.css("top", _top(this.y) + 'px');
 };
 
 // Set destination
@@ -155,12 +171,14 @@ Key.prototype.checkEndReached = function () {
 // TODO: better way to remove a key from the field, this is ugly
 Key.prototype.hit = function () {
   this.hp -= 1;
+
+  // Destroy key and all badges targetting it
   if (this.hp === 0) {
-    this.setDestination(this.x, this.y);   // Stop moving
-    this.$element.css('display', 'none');
+    this.$element.remove();
+    this.field.removeListener('tick', this.tickerId);
     this.field.keys = _.without(this.field.keys, this);
     this.targettedBy.forEach(function(badge) {
-      badge.$element && badge.$element.css('display', 'none');
+      badge.destroy();
     });
   }
 }
@@ -173,6 +191,13 @@ function Dashboard(field, x, y) {
   this.y = y;
   field.matrix[x][y] = DASHBOARD;
   this.field = field;
+
+  field.on('tick', (function (dashboard) { var count = 0; return function () {
+    if (count % dashboardAttackRate === 0) {
+      dashboard.tryToAttack();
+    }
+    count += 1;
+  }})(this));
 }
 
 // Draw the dashboard. Could factor with the Key drawing function ...
@@ -184,8 +209,8 @@ Dashboard.prototype.draw = function () {
     $('body').append(this.$element);
   }
 
-  this.$element.css("left", this.x * scale + 'px');
-  this.$element.css("top", this.y * scale + 'px');
+  this.$element.css("left", _left(this.x) + 'px');
+  this.$element.css("top", _top(this.y) + 'px');
 };
 
 // Try to find a key to attack
@@ -202,24 +227,21 @@ Dashboard.prototype.tryToAttack = function () {
 
 // A badge (an attack!)
 function Badge(dashboard, key) {
-  this.x = dashboard.x;
-  this.y = dashboard.y;
+  this.x0 = dashboard.x;
+  this.y0 = dashboard.y;
   this.target = key;
-  this.hitTarget = false;
+  this.step = 0;
   key.targettedBy.push(this);
 
-  this.tickerId = dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
-    if (count % badgeSpeed === 0) {
-      console.log("BADGE Is TRYING TO MOVE");
-      badge.draw();
-      badge.move();
-    }
+  this.draw();
 
+  this.tickerId = dashboard.field.on('tick', (function(badge) { var count = 0; return function () {
+    badge.move();
     count += 1;
   }})(this));
 }
 
-// Draw the badge. Could factor with the Key drawing function ...
+// Draw the badge initially
 Badge.prototype.draw = function () {
   if (!this.$element) {
     this.$element = $('<div class="badge"></div>');
@@ -228,27 +250,37 @@ Badge.prototype.draw = function () {
     $('body').append(this.$element);
   }
 
-  this.$element.css("left", this.x * scale + 'px');
-  this.$element.css("top", this.y * scale + 'px');
+  this.$element.css("left", _left(this.x0) + 'px');
+  this.$element.css("top", _top(this.y0) + 'px');
 };
 
 Badge.prototype.move = function () {
-  if (this.x === this.target.x && this.y === this.target.y) {
-    if (!this.hitTarget) {
-      this.target.hit();
-      this.hitTarget = true;
-      // Cleaning: remove from DOM and from tick listeners
-      this.$element.remove();
-      this.target.field.removeListener('tick', this.tickerId);
-    }
+  var self = this;
+  this.step += 1;
+
+  var percentComplete = this.step / badgeSpeed
+    , targetLeft = parseInt(this.target.$element.css('left'), 10)
+    , targetTop = parseInt(this.target.$element.css('top'), 10)
+    , newX = _left(this.x0) * (1 - percentComplete) + targetLeft * percentComplete
+    , newY = _top(this.y0) * (1 - percentComplete) + targetTop * percentComplete
+    ;
+
+  this.$element.css("left", newX);
+  this.$element.css("top", newY);
+
+  if (this.step === badgeSpeed) {
+    setTimeout(function () {
+      self.target.hit();
+      self.destroy();
+    }, tickDuration);
+
     return;
   }
+};
 
-  if (this.x === this.target.x) {
-    this.y += this.y > this.target.y ? -1 : 1;
-  } else {
-    this.x += this.x > this.target.x ? -1 : 1;
-  }
+Badge.prototype.destroy = function () {
+  this.$element.remove();
+  this.target.field.removeListener('tick', this.tickerId);
 };
 
 
@@ -264,8 +296,8 @@ function initTowerPlacementMode(field) {
       ;
 
     $ghostDashboard.css("display", "block");
-    $ghostDashboard.css("left", x * scale + 'px');
-    $ghostDashboard.css("top", y * scale + 'px');
+    $ghostDashboard.css("left", _left(x) + 'px');
+    $ghostDashboard.css("top", _top(y) + 'px');
 
     // Don't display it out of bounds
     if (x >= field.width || y >= field.height) {
@@ -284,14 +316,6 @@ function initTowerPlacementMode(field) {
     // Create and draw dashboard
     var d = new Dashboard(field, x, y);
     d.draw();
-    // Use a closure to not share the same variable
-    field.on('tick', (function (dashboard) { var count = 0; return function () {
-      if (count % dashboardAttackRate === 0) {
-        dashboard.tryToAttack();
-      }
-      count += 1;
-    }})(d));
-
     updateDashboardCount(-1);
   });
 
@@ -367,15 +391,6 @@ function startFight (field) {
     key = new Key(field);
     key.draw();
     key.setDestination(Math.floor(field.width * Math.random()), field.height - 1);
-    // Use a closure to not share the same variable
-    field.on('tick', (function (key) { var count = 0; return function () {
-      if (count % keySpeed === 0) {
-        key.move();
-        key.draw();
-      }
-      count += 1;
-    }})(key));
-
     keysToKill -= 1;
   }
 
